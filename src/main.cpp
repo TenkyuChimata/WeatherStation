@@ -68,8 +68,8 @@ void setup() {
   bmp.begin_I2C();
   bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_32X);
   bmp.setPressureOversampling(BMP3_OVERSAMPLING_32X);
-  bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_1);
-  bmp.setOutputDataRate(BMP3_ODR_200_HZ);
+  bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
+  bmp.setOutputDataRate(BMP3_ODR_1_5_HZ);
   multiplier = MAX_PERIOD / LOG_PERIOD;
   attachInterrupt(14, tube_impulse, FALLING);
 
