@@ -27,10 +27,9 @@ unsigned long cpm = 0;
 unsigned int multiplier = 0;
 unsigned long previousMillis = 0;
 
-// 猫娘心里嘀咕：当WiFi断开时，调用此函数尝试重连喵～
 void checkWiFi() {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi connection lost, reconnecting...喵～");
+    Serial.println("WiFi connection lost, reconnecting...");
     WiFi.disconnect();
     WiFi.begin(ssid, password);
     while (WiFi.status() != WL_CONNECTED) {
@@ -38,11 +37,11 @@ void checkWiFi() {
       Serial.print(".");
     }
     Serial.println("");
-    Serial.println("WiFi reconnected successfully!喵～");
+    Serial.println("WiFi reconnected successfully!");
     IPAddress ip = WiFi.localIP();
     Serial.print("New IP address: ");
     Serial.println(ip);
-    server.begin(); // 确保 WebServer 继续运行喵～
+    server.begin();
   }
 }
 
@@ -74,15 +73,14 @@ void setup() {
   multiplier = MAX_PERIOD / LOG_PERIOD;
   attachInterrupt(14, tube_impulse, FALLING);
 
-  // 猫娘提示：启用自动重连并持久化 WiFi 设置喵～
   WiFi.setAutoReconnect(true);
   WiFi.persistent(true);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.println("Connecting to WiFi...喵～");
+    Serial.println("Connecting to WiFi...");
   }
-  Serial.println("Connected to WiFi喵～");
+  Serial.println("Connected to WiFi");
 
   server.on("/", HTTP_GET, []() {
         char buffer[256];
@@ -95,13 +93,12 @@ void setup() {
   Serial.print("ESP8266 Web Server's IP address: ");
   Serial.println(ip);
   if (ip[0] == 169 && ip[1] == 254) {
-    ESP.reset(); // 如果进入 AP fallback，就重启喵～
+    ESP.reset();
   }
   server.begin();
 }
 
 void loop() {
-  // 每次循环都检查 WiFi 状态并尝试重连喵～
   checkWiFi();
 
   server.handleClient();
