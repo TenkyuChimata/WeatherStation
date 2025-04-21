@@ -9,12 +9,12 @@
 #define LOG_PERIOD 60000
 #define MAX_PERIOD 60000
 
-const char* ssid = "";
-const char* password = "";
+const char *ssid = "";
+const char *password = "";
 
 typedef struct {
-    float data[4];
-    uint8_t checksum;
+  float data[4];
+  uint8_t checksum;
 } sensor_t;
 
 sensor_t data;
@@ -27,23 +27,42 @@ unsigned long cpm = 0;
 unsigned int multiplier = 0;
 unsigned long previousMillis = 0;
 
+// 猫娘心里嘀咕：当WiFi断开时，调用此函数尝试重连喵～
+void checkWiFi() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi connection lost, reconnecting...喵～");
+    WiFi.disconnect();
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.print(".");
+    }
+    Serial.println("");
+    Serial.println("WiFi reconnected successfully!喵～");
+    IPAddress ip = WiFi.localIP();
+    Serial.print("New IP address: ");
+    Serial.println(ip);
+    server.begin(); // 确保 WebServer 继续运行喵～
+  }
+}
+
 void IRAM_ATTR tube_impulse() {
   counts++;
 }
 
-uint8_t checksum(float* data, uint8_t length) {
-  uint8_t checksum = 0;
+uint8_t checksum(float *dataArr, uint8_t length) {
+  uint8_t sum = 0;
   for (uint8_t i = 0; i < length; i++) {
-      uint8_t* bytes = (uint8_t*)&data[i];
-
-      for (uint8_t j = 0; j < sizeof(float); j++) {
-          checksum ^= bytes[j];
-      }
+    uint8_t *bytes = (uint8_t *)&dataArr[i];
+    for (uint8_t j = 0; j < sizeof(float); j++) {
+      sum ^= bytes[j];
+    }
   }
-  return checksum;
+  return sum;
 }
 
 void setup() {
+  Serial.begin(19200);
   Wire.begin();
   sht.init();
   sht.setAccuracy(SHTSensor::SHT_ACCURACY_HIGH);
@@ -53,30 +72,38 @@ void setup() {
   bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_1);
   bmp.setOutputDataRate(BMP3_ODR_200_HZ);
   multiplier = MAX_PERIOD / LOG_PERIOD;
-  Serial.begin(19200);
   attachInterrupt(14, tube_impulse, FALLING);
+
+  // 猫娘提示：启用自动重连并持久化 WiFi 设置喵～
+  WiFi.setAutoReconnect(true);
+  WiFi.persistent(true);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.println("Connecting to WiFi...");
+    Serial.println("Connecting to WiFi...喵～");
   }
-  Serial.println("Connected to WiFi");
+  Serial.println("Connected to WiFi喵～");
 
   server.on("/", HTTP_GET, []() {
-    char buffer[256];
-    snprintf(buffer, sizeof(buffer), "{\"temperature\": %f, \"humidity\": %f, \"pressure\": %f, \"usv\": %f}", data.data[0], data.data[1], data.data[2], data.data[3]);
-    server.send(200, "application/json", buffer);
-  });
+        char buffer[256];
+        snprintf(buffer, sizeof(buffer),
+                 "{\"temperature\": %f, \"humidity\": %f, \"pressure\": %f, \"usv\": %f}",
+                 data.data[0], data.data[1], data.data[2], data.data[3]);
+        server.send(200, "application/json", buffer); });
+
   IPAddress ip = WiFi.localIP();
   Serial.print("ESP8266 Web Server's IP address: ");
   Serial.println(ip);
   if (ip[0] == 169 && ip[1] == 254) {
-    ESP.reset();
+    ESP.reset(); // 如果进入 AP fallback，就重启喵～
   }
   server.begin();
 }
 
 void loop() {
+  // 每次循环都检查 WiFi 状态并尝试重连喵～
+  checkWiFi();
+
   server.handleClient();
   unsigned long currentMillis = millis();
   if (currentMillis - previousMillis > LOG_PERIOD) {
@@ -99,12 +126,12 @@ void loop() {
     cpm = counts * multiplier;
     usv = cpm / 153.8;
     dat.data[3] = usv;
-
     dat.checksum = checksum(dat.data, 4);
+
     Serial.write(SYNC_WORD);
     delayMicroseconds(10);
     memcpy(&data, &dat, sizeof(sensor_t));
-    Serial.write((uint8_t*)&data, sizeof(sensor_t));
+    Serial.write((uint8_t *)&data, sizeof(sensor_t));
     Serial.flush();
     counts = 0;
   }
