@@ -107,12 +107,16 @@ void loop() {
     previousMillis = currentMillis;
     sensor_t dat;
 
+    dat.data[1] = 0.0;
     if (sht.readSample()) {
       dat.data[0] = sht.getTemperature();
       dat.data[1] = sht.getHumidity();
     }
 
     if (bmp.performReading()) {
+      if (dat.data[1] == 0.0) {
+        dat.data[0] = bmp.temperature;
+      }
       dat.data[2] = bmp.pressure / 100.0;
     }
 
