@@ -26,13 +26,10 @@ void IRAM_ATTR tube_impulse() {
   counts++;
 }
 
-uint8_t checksum(float *dataArr, uint8_t length) {
+uint8_t checksum_bytes(const uint8_t *buf, size_t len) {
   uint8_t sum = 0;
-  for (uint8_t i = 0; i < length; i++) {
-    uint8_t *bytes = (uint8_t *)&dataArr[i];
-    for (uint8_t j = 0; j < sizeof(float); j++) {
-      sum ^= bytes[j];
-    }
+  for (size_t i = 0; i < len; i++) {
+    sum ^= buf[i];
   }
   return sum;
 }
@@ -84,7 +81,7 @@ void loop() {
     usv = cpm / 153.8;
     dat.data[3] = usv;
 
-    dat.checksum = checksum(dat.data, 4);
+    dat.checksum = checksum_bytes((const uint8_t *)dat.data, sizeof(dat.data));
 
     Serial.write(SYNC_WORD);
     memcpy(&data, &dat, sizeof(sensor_t));
