@@ -101,7 +101,7 @@ void setup()
   delay(1200);
 
   multiplier = MAX_PERIOD / LOG_PERIOD;
-  pinMode(PA0, INPUT_PULLUP);
+  pinMode(PA0, INPUT);
   attachInterrupt(digitalPinToInterrupt(PA0), tube_impulse, FALLING);
   delay(1000);
 }
