@@ -1,32 +1,52 @@
 # -*- coding: utf-8 -*-
+import os
 import time
-import requests
+import json
 import datetime
 import collections
-from pyecharts.charts import Line, Page
 from pyecharts import options as opts
+from pyecharts.charts import Line, Page
 
 temperature_list = collections.deque(maxlen=288)
 humidity_list = collections.deque(maxlen=288)
 pressure_list = collections.deque(maxlen=288)
-radiation_list = collections.deque(maxlen=288)
-radiation_avg_list = collections.deque(maxlen=288)
-pm25_list = collections.deque(maxlen=288)
+pm1p0_list = collections.deque(maxlen=288)
+pm2p5_list = collections.deque(maxlen=288)
+pm4_list = collections.deque(maxlen=288)
 pm10_list = collections.deque(maxlen=288)
 createat_list = collections.deque(maxlen=288)
+radiation_list = collections.deque(maxlen=288)
+radiation_avg_list = collections.deque(maxlen=288)
+
+
+def _to_float(v, name="value"):
+    try:
+        return float(v)
+    except Exception:
+        raise ValueError(f"Invalid {name}={v!r}")
 
 
 def get_data():
     try:
-        data = requests.get("http://127.0.0.1/data.json", timeout=3).json()
-        radiation = data["usv"]
-        radiation_avg = data["usv_avg"]
-        temperature = data["temperature"]
-        humidity = data["humidity"]
-        pressure = data["pressure"]
-        pm25 = data["pm2.5"]
-        pm10 = data["pm10"]
-        create_at = data["create_at"][-8:]
+        with open("/var/www/html/data.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+        temperature = _to_float(data["temperature"], "temperature")
+        humidity = _to_float(data["humidity"], "humidity")
+        pressure = _to_float(data["pressure"], "pressure")
+        pm1p0 = _to_float(data["pm1.0"], "pm1.0")
+        pm2p5 = _to_float(data["pm2.5"], "pm2.5")
+        pm4 = _to_float(data["pm4.0"], "pm4.0")
+        pm10 = _to_float(data["pm10"], "pm10")
+        radiation = _to_float(data["usv"], "usv")
+        radiation_avg = _to_float(data["usv_avg"], "usv_avg")
+        # 避免跨天 x 轴重复：尽量用完整时间
+        ca = str(data.get("create_at", "")).strip()
+        if len(ca) >= 19 and ca[4] == "-" and ca[7] == "-" and ca[10] in (" ", "T"):
+            # 形如 2026-01-18 12:34:56 / 2026-01-18T12:34:56
+            create_at = ca[:19].replace("T", " ")
+        else:
+            # 兜底：用本地当前时间
+            create_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     except Exception as e:
         print(f"{datetime.datetime.now().strftime('[%H:%M:%S]')} Error: {e}")
         return None
@@ -34,10 +54,12 @@ def get_data():
         temperature,
         humidity,
         pressure,
+        pm1p0,
+        pm2p5,
+        pm4,
+        pm10,
         radiation,
         radiation_avg,
-        pm25,
-        pm10,
         create_at,
     )
 
@@ -57,7 +79,17 @@ def plot(x, y, y_name, plot_name, html_name):
     )
     page = Page(layout=Page.SimplePageLayout, page_title=plot_name)
     page.add(line)
-    page.render(html_name)
+    # 原子写入：避免 Nginx/浏览器读到半截文件
+    tmp = html_name + ".tmp"
+    try:
+        page.render(tmp)
+        os.replace(tmp, html_name)
+    finally:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
 
 
 while True:
@@ -67,11 +99,13 @@ while True:
             temperature_list.append(weather_data[0])
             humidity_list.append(weather_data[1])
             pressure_list.append(weather_data[2])
-            radiation_list.append(weather_data[3])
-            radiation_avg_list.append(weather_data[4])
-            pm25_list.append(weather_data[5])
+            pm1p0_list.append(weather_data[3])
+            pm2p5_list.append(weather_data[4])
+            pm4_list.append(weather_data[5])
             pm10_list.append(weather_data[6])
-            createat_list.append(weather_data[7])
+            radiation_list.append(weather_data[7])
+            radiation_avg_list.append(weather_data[8])
+            createat_list.append(weather_data[9])
             plot(
                 list(createat_list),
                 list(temperature_list),
@@ -109,10 +143,24 @@ while True:
             )
             plot(
                 list(createat_list),
-                list(pm25_list),
+                list(pm1p0_list),
+                "PM1.0 (μg/m³)",
+                "PM1.0",
+                "/var/www/html/pm1.0.html",
+            )
+            plot(
+                list(createat_list),
+                list(pm2p5_list),
                 "PM2.5 (μg/m³)",
                 "PM2.5",
                 "/var/www/html/pm2.5.html",
+            )
+            plot(
+                list(createat_list),
+                list(pm4_list),
+                "PM4 (μg/m³)",
+                "PM4",
+                "/var/www/html/pm4.html",
             )
             plot(
                 list(createat_list),

@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
+import os
 import time
-import requests
+import json
 import datetime
 import collections
-from pyecharts.charts import Line, Page
 from pyecharts import options as opts
+from pyecharts.charts import Line, Page
 
 temperature_list = collections.deque(maxlen=288)
 humidity_list = collections.deque(maxlen=288)
@@ -12,13 +13,26 @@ pressure_list = collections.deque(maxlen=288)
 createat_list = collections.deque(maxlen=288)
 
 
+def _to_float(v, name="value"):
+    try:
+        return float(v)
+    except Exception:
+        raise ValueError(f"Invalid {name}={v!r}")
+
+
 def get_data():
     try:
-        data = requests.get("http://127.0.0.1/data_seis.json", timeout=3).json()
-        temperature = data["temperature"]
-        humidity = data["humidity"]
-        pressure = data["pressure"]
-        create_at = data["create_at"][-8:]
+        with open("/var/www/html/data_seis.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+        temperature = _to_float(data["temperature"], "temperature")
+        humidity = _to_float(data["humidity"], "humidity")
+        pressure = _to_float(data["pressure"], "pressure")
+        # 避免跨天 x 轴重复：尽量用完整时间
+        ca = str(data.get("create_at", "")).strip()
+        if len(ca) >= 19 and ca[4] == "-" and ca[7] == "-" and ca[10] in (" ", "T"):
+            create_at = ca[:19].replace("T", " ")
+        else:
+            create_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     except Exception as e:
         print(f"{datetime.datetime.now().strftime('[%H:%M:%S]')} Error: {e}")
         return None
@@ -45,7 +59,17 @@ def plot(x, y, y_name, plot_name, html_name):
     )
     page = Page(layout=Page.SimplePageLayout, page_title=plot_name)
     page.add(line)
-    page.render(html_name)
+    # 原子写入：避免 Nginx/浏览器读到半截文件
+    tmp = html_name + ".tmp"
+    try:
+        page.render(tmp)
+        os.replace(tmp, html_name)
+    finally:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
 
 
 while True:
