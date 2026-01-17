@@ -173,6 +173,7 @@ if __name__ == "__main__":
         try:
             weather_data = get_data()
             if weather_data is not None:
+                append_history(weather_data)
                 temperature_list.append(weather_data[0])
                 humidity_list.append(weather_data[1])
                 pressure_list.append(weather_data[2])
