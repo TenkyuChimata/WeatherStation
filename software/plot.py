@@ -4,6 +4,7 @@ import time
 import json
 import datetime
 import collections
+from pathlib import Path
 from pyecharts import options as opts
 from pyecharts.charts import Line, Page
 
@@ -18,12 +19,84 @@ createat_list = collections.deque(maxlen=288)
 radiation_list = collections.deque(maxlen=288)
 radiation_avg_list = collections.deque(maxlen=288)
 
+HISTORY_PATH = Path("/var/www/html/history.jsonl")
+MAX_POINTS = 288  # 24h * (60/5) = 288
+HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+
 
 def _to_float(v, name="value"):
     try:
         return float(v)
     except Exception:
         raise ValueError(f"Invalid {name}={v!r}")
+
+
+def load_history():
+    """启动时恢复最近24小时数据到内存deque"""
+    if not HISTORY_PATH.exists():
+        return
+    try:
+        with HISTORY_PATH.open("r", encoding="utf-8") as f:
+            lines = f.readlines()[-MAX_POINTS:]
+        for line in lines:
+            try:
+                row = json.loads(line)
+                # 兼容字段名：t 为时间
+                createat_list.append(str(row["t"]))
+                temperature_list.append(float(row["temperature"]))
+                humidity_list.append(float(row["humidity"]))
+                pressure_list.append(float(row["pressure"]))
+                pm1p0_list.append(float(row["pm1.0"]))
+                pm2p5_list.append(float(row["pm2.5"]))
+                pm4_list.append(float(row["pm4.0"]))
+                pm10_list.append(float(row["pm10"]))
+                radiation_list.append(float(row["usv"]))
+                radiation_avg_list.append(float(row["usv_avg"]))
+            except Exception:
+                # 跳过坏行
+                continue
+    except Exception as e:
+        print(
+            f"{datetime.datetime.now().strftime('[%H:%M:%S]')} History load error: {e}"
+        )
+
+
+def append_history(weather_data):
+    """追加一条数据到历史文件，并裁剪到最多24小时(288条)"""
+    row = {
+        "t": weather_data[9],
+        "temperature": weather_data[0],
+        "humidity": weather_data[1],
+        "pressure": weather_data[2],
+        "pm1.0": weather_data[3],
+        "pm2.5": weather_data[4],
+        "pm4.0": weather_data[5],
+        "pm10": weather_data[6],
+        "usv": weather_data[7],
+        "usv_avg": weather_data[8],
+    }
+    try:
+        # 1) 先追加一行
+        with HISTORY_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+
+        # 2) 再裁剪到最多 MAX_POINTS 行（最小实现：读尾部再原子替换）
+        with HISTORY_PATH.open("r", encoding="utf-8") as f:
+            lines = f.readlines()
+        if len(lines) > MAX_POINTS:
+            lines = lines[-MAX_POINTS:]
+            tmp = str(HISTORY_PATH) + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.writelines(lines)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, HISTORY_PATH)
+    except Exception as e:
+        print(
+            f"{datetime.datetime.now().strftime('[%H:%M:%S]')} History append error: {e}"
+        )
 
 
 def get_data():
@@ -92,87 +165,91 @@ def plot(x, y, y_name, plot_name, html_name):
             pass
 
 
-while True:
-    try:
-        weather_data = get_data()
-        if weather_data is not None:
-            temperature_list.append(weather_data[0])
-            humidity_list.append(weather_data[1])
-            pressure_list.append(weather_data[2])
-            pm1p0_list.append(weather_data[3])
-            pm2p5_list.append(weather_data[4])
-            pm4_list.append(weather_data[5])
-            pm10_list.append(weather_data[6])
-            radiation_list.append(weather_data[7])
-            radiation_avg_list.append(weather_data[8])
-            createat_list.append(weather_data[9])
-            plot(
-                list(createat_list),
-                list(temperature_list),
-                "温度 (℃)",
-                "温度",
-                "/var/www/html/temperature.html",
-            )
-            plot(
-                list(createat_list),
-                list(humidity_list),
-                "湿度 (%RH)",
-                "湿度",
-                "/var/www/html/humidity.html",
-            )
-            plot(
-                list(createat_list),
-                list(pressure_list),
-                "大气压 (hPa)",
-                "大气压",
-                "/var/www/html/pressure.html",
-            )
-            plot(
-                list(createat_list),
-                list(radiation_list),
-                "电离辐射 (μSv/h)",
-                "电离辐射",
-                "/var/www/html/radiation.html",
-            )
-            plot(
-                list(createat_list),
-                list(radiation_avg_list),
-                "电离辐射 (μSv/h)",
-                "电离辐射(小时均值)",
-                "/var/www/html/radiation_avg.html",
-            )
-            plot(
-                list(createat_list),
-                list(pm1p0_list),
-                "PM1.0 (μg/m³)",
-                "PM1.0",
-                "/var/www/html/pm1.0.html",
-            )
-            plot(
-                list(createat_list),
-                list(pm2p5_list),
-                "PM2.5 (μg/m³)",
-                "PM2.5",
-                "/var/www/html/pm2.5.html",
-            )
-            plot(
-                list(createat_list),
-                list(pm4_list),
-                "PM4 (μg/m³)",
-                "PM4",
-                "/var/www/html/pm4.html",
-            )
-            plot(
-                list(createat_list),
-                list(pm10_list),
-                "PM10 (μg/m³)",
-                "PM10",
-                "/var/www/html/pm10.html",
-            )
-            time.sleep(300)
-        else:
-            time.sleep(5)
-    except Exception as e:
-        print(f"{datetime.datetime.now().strftime('[%H:%M:%S]')} Error: {e}")
-        time.sleep(1)
-        continue
+if __name__ == "__main__":
+
+    load_history()
+
+    while True:
+        try:
+            weather_data = get_data()
+            if weather_data is not None:
+                temperature_list.append(weather_data[0])
+                humidity_list.append(weather_data[1])
+                pressure_list.append(weather_data[2])
+                pm1p0_list.append(weather_data[3])
+                pm2p5_list.append(weather_data[4])
+                pm4_list.append(weather_data[5])
+                pm10_list.append(weather_data[6])
+                radiation_list.append(weather_data[7])
+                radiation_avg_list.append(weather_data[8])
+                createat_list.append(weather_data[9])
+                plot(
+                    list(createat_list),
+                    list(temperature_list),
+                    "温度 (℃)",
+                    "温度",
+                    "/var/www/html/temperature.html",
+                )
+                plot(
+                    list(createat_list),
+                    list(humidity_list),
+                    "湿度 (%RH)",
+                    "湿度",
+                    "/var/www/html/humidity.html",
+                )
+                plot(
+                    list(createat_list),
+                    list(pressure_list),
+                    "大气压 (hPa)",
+                    "大气压",
+                    "/var/www/html/pressure.html",
+                )
+                plot(
+                    list(createat_list),
+                    list(radiation_list),
+                    "电离辐射 (μSv/h)",
+                    "电离辐射",
+                    "/var/www/html/radiation.html",
+                )
+                plot(
+                    list(createat_list),
+                    list(radiation_avg_list),
+                    "电离辐射 (μSv/h)",
+                    "电离辐射(小时均值)",
+                    "/var/www/html/radiation_avg.html",
+                )
+                plot(
+                    list(createat_list),
+                    list(pm1p0_list),
+                    "PM1.0 (μg/m³)",
+                    "PM1.0",
+                    "/var/www/html/pm1.0.html",
+                )
+                plot(
+                    list(createat_list),
+                    list(pm2p5_list),
+                    "PM2.5 (μg/m³)",
+                    "PM2.5",
+                    "/var/www/html/pm2.5.html",
+                )
+                plot(
+                    list(createat_list),
+                    list(pm4_list),
+                    "PM4 (μg/m³)",
+                    "PM4",
+                    "/var/www/html/pm4.html",
+                )
+                plot(
+                    list(createat_list),
+                    list(pm10_list),
+                    "PM10 (μg/m³)",
+                    "PM10",
+                    "/var/www/html/pm10.html",
+                )
+                time.sleep(300)
+            else:
+                time.sleep(5)
+        except Exception as e:
+            print(f"{datetime.datetime.now().strftime('[%H:%M:%S]')} Error: {e}")
+            time.sleep(1)
+            continue
